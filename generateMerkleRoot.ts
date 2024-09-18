@@ -15,7 +15,7 @@ function hashData(address: string, amount: string): Buffer {
 }
 
 // Read CSV and generate Merkle Tree
-function generateMerkleTree() {
+function generateMerkleTree(): { merkleRoot: string, merkleTree: MerkleTree, leaves: Buffer[] } {
   const addresses: string[] = [];
   const amounts: string[] = [];
   const leaves: Buffer[] = [];
@@ -45,7 +45,13 @@ function generateMerkleTree() {
 
       fs.writeFileSync('merkleTree.json', JSON.stringify(output, null, 2));
     });
+
+  // Return the Merkle Tree and the root
+  return {
+    merkleTree: new MerkleTree(leaves, keccak256, { sortPairs: true }),
+    merkleRoot: new MerkleTree(leaves, keccak256, { sortPairs: true }).getRoot().toString('hex'),
+    leaves: leaves
+  };
 }
 
-generateMerkleTree();
-//Merkle Root: 6b97a48c2de43f662e3735eb7efdefafe60d7fabdff6b14b413957701afb7b87
+export { generateMerkleTree };
