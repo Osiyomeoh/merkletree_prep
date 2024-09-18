@@ -29,7 +29,7 @@ contract MerkleAirdrop {
         require(!hasClaimed[msg.sender], "already claimed");
         require(BAYC.balanceOf(msg.sender) > 0, "No BAYC NFT ownership"); 
 
-        bytes32 leaf = keccak256(abi.encodePacked(msg.sender, _amount));
+        bytes32 leaf = keccak256(bytes.concat(keccak256(abi.encode(msg.sender, _amount))));
         require(MerkleProof.verify(_merkleProof, merkleRootHash, leaf), "Invalid proof");
 
         hasClaimed[msg.sender] = true;

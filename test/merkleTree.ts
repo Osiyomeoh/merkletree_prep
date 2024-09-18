@@ -4,7 +4,10 @@ import {
   //import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
   import { expect } from "chai";
   import hre from "hardhat";
-  import {ethers} from "ethers";
+  import { ethers } from "hardhat";
+
+  import { StandardMerkleTree } from "@openzeppelin/merkle-tree";
+  const helpers = require("@nomicfoundation/hardhat-network-helpers");
   
   describe("MerkleAirdrop", function () {
 
@@ -18,15 +21,15 @@ import {
     // We use loadFixture to run this setup once, snapshot that state,
     // and reset Hardhat Network to that snapshot in every test.
 
-    async function impersonateBAYCHolder() {
-      await hre.network.provider.request({
-        method: "hardhat_impersonateAccount",
-        params: [BAYC_HOLDER],
-      });
+    // async function impersonateBAYCHolder() {
+    //   await hre.network.provider.request({
+    //     method: "hardhat_impersonateAccount",
+    //     params: [BAYC_HOLDER],
+    //   });
   
-      const baycHolder = await hre.ethers.getSigner(BAYC_HOLDER);
-      return baycHolder;
-    }
+    //   const baycHolder = await hre.ethers.getSigner(BAYC_HOLDER);
+    //   return baycHolder;
+    // }
 
     async function deployTokenFixture() {
       const [owner, otherAccount] = await hre.ethers.getSigners();
@@ -38,12 +41,26 @@ import {
     }
 
     async function deployMerkleAirdropFixture() {
+
       const [owner, otherAccount] = await hre.ethers.getSigners();
       const { samtoken } = await loadFixture(deployTokenFixture);
-      const MerkleAirdrop = await hre.ethers.getContractFactory("MerkleAirdrop", owner);
-      const merkleAirdrop = await MerkleAirdrop.deploy(samtoken, bytes32Value);
-      return { merkleAirdrop, owner, otherAccount, samtoken };
+      await helpers.impersonateAccount(BAYC_HOLDER);
+      const baycHolder = await ethers.getSigner(BAYC_HOLDER);
+  
+      const leaves = [
+        [ baycHolder.address,  ethers.parseUnits("31", 18) ],
+        [otherAccount.address, ethers.parseEther("50") ],
+      ];
+      
+
+      const merkleTree = StandardMerkleTree.of(leaves, ["address", "uint256"]);
+      const merkleRoot = merkleTree.root;
+  
+      const MerkleAirdrop = await hre.ethers.getContractFactory("MerkleAirdrop");
+      const merkleAirdrop = await MerkleAirdrop.deploy(samtoken, merkleRoot);
+      return { merkleAirdrop, owner, otherAccount, samtoken, merkleTree, leaves, merkleRoot, baycHolder };
     }
+  
   
     describe("Token Deployment", function () {
       it("Should set the right owner", async function () {
@@ -63,44 +80,42 @@ import {
     })
     it(" should check that contract was deployed with the correct erc20 token and merklehash", async function() {
         const { samtoken, otherAccount } = await loadFixture(deployTokenFixture)
-        const { merkleAirdrop, owner } = await loadFixture(deployMerkleAirdropFixture)
+        const { merkleAirdrop, owner, merkleTree } = await loadFixture(deployMerkleAirdropFixture)
 
       
-        expect(await merkleAirdrop.merkleRootHash()).to.equal(bytes32Value);
+        const expectedMerkleRoot = ethers.hexlify(merkleTree.root);
+        expect(await merkleAirdrop.merkleRootHash()).to.equal(expectedMerkleRoot);
+
         
     })
-    // it("should not allow invalid claims", async function() {
-    //     const { merkleAirdrop, owner } = await loadFixture(deployMerkleAirdropFixture)
-
-    //     const amount = hre.ethers.parseUnits("500", 18);
-
-    //     const invalidProof = [ethers.hexlify(ethers.randomBytes(32))];
-
-    //     await expect(merkleAirdrop.claimAirdrop(amount, invalidProof)).to.be.revertedWith("Invalid proof");
-
     
-        
-       
-    // })
   });
   
 
   describe("MerkleAirdrop DEPLOYMENT", function () {
     it("should allow BAYC holder to claim airdrop", async function () {
-      const { merkleAirdrop, samtoken, owner } = await loadFixture(deployMerkleAirdropFixture);
+      const { merkleAirdrop, samtoken, owner, baycHolder, merkleTree } = await loadFixture(deployMerkleAirdropFixture);
 
       
-      const baycHolder = await impersonateBAYCHolder();
+    
       await owner.sendTransaction({
-        to: BAYC_HOLDER,
-        value: ethers.parseEther("1"), // Send 1 ETH to BAYC holder
+        to: baycHolder,
+        value: ethers.parseEther("10"), 
       });
       
       await samtoken.transfer(merkleAirdrop, ethers.parseEther("1000"));
 
-      const amount = ethers.parseUnits("500", 18);
-      const validProof = [ethers.hexlify(ethers.randomBytes(32))]; 
-
+      const amount = ethers.parseUnits("31", 18);
+   
+      // const baycHolderIndex = leaves.findIndex(
+      //   (leaf) => leaf[0] === baycHolder.address
+      // );
+  
+      // Generate the proof for the BAYC holder
+      const validProof = merkleTree.getProof([
+        baycHolder.address,
+        ethers.parseEther("31"),
+      ]);
      
       await expect(merkleAirdrop.connect(baycHolder).claimAirdrop(amount, validProof))
         .to.emit(merkleAirdrop, "SuccessfulClaim")
@@ -117,7 +132,7 @@ import {
       
       await samtoken.transfer(merkleAirdrop, ethers.parseEther("1000"));
 
-      const amount = ethers.parseUnits("500", 18);
+      const amount = ethers.parseUnits("31", 18);
       const invalidProof = [ethers.hexlify(ethers.randomBytes(32))]; 
 
       
